@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Unlimited AI Video Generator (Prototype)</title>
+
+  <!-- Tailwind via CDN for quick styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    /* Tiny custom */
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace; }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen flex items-center justify-center p-6">
+  <main class="w-full max-w-4xl bg-white rounded-2xl shadow-lg p-6">
+    <h1 class="text-2xl font-semibold mb-2">Unlimited AI Video Generator — Prototype</h1>
+    <p class="text-sm text-slate-500 mb-6">Enter a topic, generate a script, tweak it, choose music and style, then generate a video. Backend endpoints required for real AI/video work.</p>
+
+    <section class="grid gap-4 md:grid-cols-2">
+      <!-- Left column: Inputs & script -->
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700">Topic</label>
+          <input id="topic" type="text" placeholder="e.g. 'How to unbox a product' or 'Product promo for X'" class="mt-1 block w-full rounded-lg border-gray-200 shadow-sm p-2" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Duration (sec)</label>
+            <input id="duration" type="number" min="15" value="60" class="mt-1 block w-full rounded-lg border-gray-200 p-2" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Tone / Style</label>
+            <select id="style" class="mt-1 block w-full rounded-lg border-gray-200 p-2">
+              <option>Professional</option>
+              <option>Casual</option>
+              <option>Funny</option>
+              <option>Educational</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-700">Music Selection</label>
+          <select id="music" class="mt-1 block w-full rounded-lg border-gray-200 p-2">
+            <option value="ambient">Ambient / Calm</option>
+            <option value="upbeat">Upbeat / Energetic</option>
+            <option value="cinematic">Cinematic</option>
+            <option value="none">No music</option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <label class="inline-flex items-center gap-2">
+            <input id="unlimited" type="checkbox" checked class="rounded" />
+            <span class="text-sm text-slate-700">Unlimited generation (frontend allows unlimited requests)</span>
+          </label>
+        </div>
+
+        <div class="flex gap-2">
+          <button id="genScriptBtn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg shadow-sm hover:bg-indigo-700">Generate Script</button>
+          <button id="genVideoBtn" class="px-4 py-2 bg-green-600 text-white rounded-lg shadow-sm hover:bg-green-700">Generate Video</button>
+          <button id="clearBtn" class="px-4 py-2 bg-slate-100 rounded-lg">Clear</button>
+        </div>
+
+        <div class="mt-4">
+          <label class="block text-sm font-medium text-slate-700">Script (editable)</label>
+          <textarea id="scriptText" rows="10" class="mt-1 block w-full rounded-lg border-gray-200 p-3 mono" placeholder="Generated script will appear here..."></textarea>
+        </div>
+
+        <div class="mt-2">
+          <label class="block text-sm font-medium text-slate-700">Subtitles (SRT output)</label>
+          <textarea id="srtText" rows="6" class="mt-1 block w-full rounded-lg border-gray-200 p-3 mono" placeholder="Subtitles (SRT) will be generated from the script..."></textarea>
+        </div>
+      </div>
+
+      <!-- Right column: Preview & logs -->
+      <div class="space-y-4">
+        <div class="bg-slate-50 p-4 rounded-lg h-full flex flex-col">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-lg font-medium">Preview</h2>
+            <span id="status" class="text-sm text-slate-500">Idle</span>
+          </div>
+
+          <div class="flex-1 grid gap-3">
+            <div class="bg-black rounded-lg flex items-center justify-center aspect-video">
+              <!-- Video element will show here if backend returns a blob -->
+              <video id="previewVideo" controls class="max-h-full max-w-full rounded"></video>
+              <div id="placeholder" class="text-white text-center p-4">
+                <div class="text-xl font-semibold">Video preview will appear here</div>
+                <div class="text-sm text-slate-200">After generation, video will load automatically</div>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="text-sm font-medium mb-1">Generation Log</h3>
+              <div id="log" class="h-40 overflow-auto rounded-lg border border-dashed border-slate-200 p-3 bg-white mono text-xs"></div>
+            </div>
+
+            <div class="flex gap-2">
+              <a id="downloadLink" class="px-3 py-2 bg-amber-500 text-white rounded-lg hidden" download>Download Video</a>
+              <button id="downloadSrtBtn" class="px-3 py-2 bg-amber-200 rounded-lg">Download SRT</button>
+              <button id="previewSubsBtn" class="px-3 py-2 bg-slate-100 rounded-lg">Preview Subtitles</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="text-xs text-slate-500">
+          <strong>Note:</strong> This prototype needs backend endpoints:
+          <ul class="list-disc ml-5">
+            <li><code>/api/generate-script</code> &rarr; accepts JSON {topic, duration, style} and returns {script}</li>
+            <li><code>/api/generate-video</code> &rarr; accepts JSON {script, music, duration, style} and returns a video file (binary) — or a URL to the video.</li>
+          </ul>
+          The frontend doesn't enforce limits — backend should implement quota/usage rules or billing if you want true unlimited control.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // --- Utility & DOM ---
+    const topicEl = document.getElementById('topic');
+    const durationEl = document.getElementById('duration');
+    const styleEl = document.getElementById('style');
+    const musicEl = document.getElementById('music');
+    const unlimitedEl = document.getElementById('unlimited');
+
+    const genScriptBtn = document.getElementById('genScriptBtn');
+    const genVideoBtn = document.getElementById('genVideoBtn');
+    const clearBtn = document.getElementById('clearBtn');
+
+    const scriptText = document.getElementById('scriptText');
+    const srtText = document.getElementById('srtText');
+    const logEl = document.getElementById('log');
+    const statusEl = document.getElementById('status');
+
+    const previewVideo = document.getElementById('previewVideo');
+    const placeholder = document.getElementById('placeholder');
+    const downloadLink = document.getElementById('downloadLink');
+    const downloadSrtBtn = document.getElementById('downloadSrtBtn');
+    const previewSubsBtn = document.getElementById('previewSubsBtn');
+
+    function appendLog(msg) {
+      const time = new Date().toLocaleTimeString();
+      logEl.innerText = `[${time}] ${msg}\n` + logEl.innerText;
+    }
+
+    function setStatus(text) {
+      statusEl.innerText = text;
+      appendLog(text);
+    }
+
+    // --- Script generation (calls backend) ---
+    genScriptBtn.addEventListener('click', async () => {
+      const topic = topicEl.value.trim();
+      if (!topic) {
+        alert('Please enter a topic first.');
+        return;
+      }
+      setStatus('Generating script...');
+      // Show optimistic placeholder script while backend works
+      scriptText.value = `Generating script for "${topic}"...`;
+      appendLog('Requesting /api/generate-script');
+
+      try {
+        // Example fetch to your backend - replace URL if needed
+        const resp = await fetch('/api/generate-script', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            topic,
+            duration: Number(durationEl.value) || 60,
+            style: styleEl.value
+          })
+        });
+
+        if (!resp.ok) throw new Error('Script generation failed on server.');
+
+        const data = await resp.json();
+        // Expect { script: "..." }
+        scriptText.value = data.script || `/* server returned no script; topic: ${topic} */`;
+        setStatus('Script generated ✔');
+        // Generate subtitles right away from script (frontend fallback)
+        generateSrtFromScript();
+      } catch (err) {
+        appendLog('Script generation error: ' + err.message);
+        setStatus('Script generation failed ✖ — using fallback sample.');
+        // Fallback: make a small sample script so the UI remains usable
+        scriptText.value = `Intro: Hi—this short video covers "${topic}".\nMain: Key point 1 — explain briefly.\nConclusion: Thanks for watching! Visit example.com`;
+        generateSrtFromScript();
+      }
+    });
+
+    // --- Simple SRT generator from script text ---
+    function generateSrtFromScript() {
+      const lines = scriptText.value.split('\n').filter(l => l.trim());
+      const secsTotal = Math.max(15, Number(durationEl.value) || 60);
+      const perLine = Math.max(2, Math.floor(secsTotal / Math.max(1, lines.length)));
+      let srt = '';
+      for (let i = 0; i < lines.length; i++) {
+        const start = i * perLine;
+        const end = start + perLine;
+        srt += `${i+1}\n${formatTime(start)} --> ${formatTime(end)}\n${lines[i]}\n\n`;
+      }
+      srtText.value = srt.trim();
+      appendLog('Subtitles (SRT) generated from script.');
+    }
+
+    function formatTime(seconds) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      return `${pad(h)}:${pad(m)}:${pad(s)},000`;
+    }
+    function pad(n) { return n.toString().padStart(2, '0'); }
+
+    // Download SRT
+    downloadSrtBtn.addEventListener('click', () => {
+      const blob = new Blob([srtText.value], {type: 'text/plain'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'subtitles.srt';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    previewSubsBtn.addEventListener('click', () => {
+      alert('Preview subtitles in the SRT textarea or download and load into a video player that supports SRT.');
+    });
+
+    // --- Video generation (calls backend) ---
+    genVideoBtn.addEventListener('click', async () => {
+      const script = scriptText.value.trim();
+      if (!script) {
+        alert('Please generate or paste a script first.');
+        return;
+      }
+      setStatus('Queuing video generation...');
+      appendLog('Requesting /api/generate-video');
+
+      // Disable buttons while generating
+      genVideoBtn.disabled = true;
+      genScriptBtn.disabled = true;
+
+      try {
+        // POST to backend which should return a video binary (or URL). Example expects binary blob response.
+        const resp = await fetch('/api/generate-video', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            script,
+            music: musicEl.value,
+            duration: Number(durationEl.value) || 60,
+            style: styleEl.value,
+            unlimited: unlimitedEl.checked
+          })
+        });
+
+        if (!resp.ok) throw new Error('Video generation failed on server.');
+
+        // If server returns JSON with {url: "..."} handle that:
+        const ct = resp.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const j = await resp.json();
+          if (j.url) {
+            loadVideoFromUrl(j.url);
+            setStatus('Video ready (remote URL) ✔');
+            appendLog('Server returned URL: ' + j.url);
+          } else {
+            throw new Error('Server JSON missing url');
+          }
+        } else {
+          // Assume binary/video/mp4
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          loadVideoBlob(url, blob);
+          setStatus('Video generated ✔');
+          appendLog('Video blob received and loaded.');
+        }
+      } catch (err) {
+        appendLog('Video generation error: ' + err.message);
+        setStatus('Video generation failed ✖ — see log.');
+        // Optional: provide sample demo video (small) as fallback
+        loadDemoPlaceholder();
+      } finally {
+        genVideoBtn.disabled = false;
+        genScriptBtn.disabled = false;
+      }
+    });
+
+    function loadVideoFromUrl(url) {
+      previewVideo.src = url;
+      previewVideo.style.display = 'block';
+      placeholder.style.display = 'none';
+      downloadLink.href = url;
+      downloadLink.classList.remove('hidden');
+    }
+
+    function loadVideoBlob(url, blob) {
+      previewVideo.src = url;
+      previewVideo.style.display = 'block';
+      placeholder.style.display = 'none';
+      // prepare download link
+      downloadLink.href = url;
+      downloadLink.download = 'generated_video.mp4';
+      downloadLink.classList.remove('hidden');
+    }
+
+    function loadDemoPlaceholder() {
+      // Small data-URI or empty placeholder — for prototype we clear video
+      previewVideo.pause();
+      previewVideo.removeAttribute('src');
+      previewVideo.load();
+      previewVideo.style.display = 'none';
+      placeholder.style.display = 'flex';
+      downloadLink.classList.add('hidden');
+    }
+
+    // Clear UI
+    clearBtn.addEventListener('click', () => {
+      topicEl.value = '';
+      durationEl.value = 60;
+      scriptText.value = '';
+      srtText.value = '';
+      loadDemoPlaceholder();
+      appendLog('Cleared UI.');
+      setStatus('Idle');
+    });
+
+    // Starter: hide video element until a video is loaded
+    loadDemoPlaceholder();
+
+    // --- Helpful defaults for local testing without backend ---
+    // If you want the UI to work locally without a backend, uncomment the block below.
+    /*
+    genScriptBtn.addEventListener('click', () => {
+      scriptText.value = `Intro: Welcome to a demo about "${topicEl.value}".\nPoint 1: Explain the main idea.\nPoint 2: Give an example.\nConclusion: Call to action.`;
+      generateSrtFromScript();
+      setStatus('Script generated (local fallback)');
+    });
+    genVideoBtn.addEventListener('click', () => {
+      setTimeout(() => {
+        setStatus('Video generated (local demo) ✔');
+        appendLog('Local demo video simulated.');
+      }, 1500);
+    });
+    */
+
+    // --- End of script ---
+  </script>
+</body>
+</html>
